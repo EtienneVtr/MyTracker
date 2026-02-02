@@ -1,0 +1,212 @@
+@page "/exercises"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using SportTracker.Data
+@using SportTracker.Models
+@inject AppDbContext Db
+
+<h3>Exercices</h3>
+
+<div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px;">
+    <div>
+        <label>Nom</label><br />
+        <input @bind-value="NewExerciseName" @bind-value:event="oninput" />
+    </div>
+
+    <div>
+        <label>Groupe musculaire</label><br />
+        <input @bind-value="NewExerciseMuscleGroup" @bind-value:event="oninput" />
+    </div>
+
+    <button @onclick="AddExercise" disabled="@IsAddDisabled">Ajouter</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <p style="color:#b00020;">@ErrorMessage</p>
+}
+
+@if (Exercises is null)
+{
+    <p>Chargement...</p>
+}
+else if (Exercises.Count == 0)
+{
+    <p>Aucun exercice pour l’instant.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Groupe</th>
+                <th style="width:220px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var ex in Exercises)
+            {
+                var isEditing = EditingId == ex.Id;
+
+                <tr>
+                    <td>
+                        @if (isEditing)
+                        {
+                            <input class="form-control" @bind-value="EditName" @bind-value:event="oninput" />
+                        }
+                        else
+                        {
+                            @ex.Name
+                        }
+                    </td>
+                    <td>
+                        @if (isEditing)
+                        {
+                            <input class="form-control" @bind-value="EditMuscleGroup" @bind-value:event="oninput" />
+                        }
+                        else
+                        {
+                            @ex.MuscleGroup
+                        }
+                    </td>
+                    <td>
+                        @if (isEditing)
+                        {
+                            <button class="btn btn-sm btn-primary me-2" @onclick="SaveEdit" disabled="@IsSaveDisabled">Sauver</button>
+                            <button class="btn btn-sm btn-secondary me-2" @onclick="CancelEdit">Annuler</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => StartEdit(ex)">Éditer</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteExercise(ex.Id)">Supprimer</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+    private List<Exercise>? Exercises;
+
+    private string NewExerciseName = "";
+    private string NewExerciseMuscleGroup = "";
+    private string ErrorMessage = "";
+
+    private bool IsAddDisabled =>
+        string.IsNullOrWhiteSpace(NewExerciseName) || string.IsNullOrWhiteSpace(NewExerciseMuscleGroup);
+
+    private int? EditingId;
+    private string EditName = "";
+    private string EditMuscleGroup = "";
+
+    private bool IsSaveDisabled =>
+        string.IsNullOrWhiteSpace(EditName) || string.IsNullOrWhiteSpace(EditMuscleGroup);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        Exercises = await Db.Exercises
+            .AsNoTracking()
+            .OrderBy(e => e.MuscleGroup)
+            .ThenBy(e => e.Name)
+            .ToListAsync();
+    }
+
+    private async Task AddExercise()
+    {
+        ErrorMessage = "";
+
+        var name = NewExerciseName.Trim();
+        var group = NewExerciseMuscleGroup.Trim();
+
+        // (Optionnel mais pratique) éviter les doublons exacts
+        var exists = await Db.Exercises.AnyAsync(e => e.Name == name);
+        if (exists)
+        {
+            ErrorMessage = "Cet exercice existe déjà (même nom).";
+            return;
+        }
+
+        Db.Exercises.Add(new Exercise { Name = name, MuscleGroup = group });
+        await Db.SaveChangesAsync();
+
+        NewExerciseName = "";
+        NewExerciseMuscleGroup = "";
+
+        await Reload();
+    }
+
+    private async Task DeleteExercise(int id)
+    {
+        ErrorMessage = "";
+
+        var ex = await Db.Exercises.FindAsync(id);
+        if (ex is null) return;
+
+        Db.Exercises.Remove(ex);
+        await Db.SaveChangesAsync();
+
+        if (EditingId == id) CancelEdit();
+
+        await Reload();
+    }
+
+    private void StartEdit(Exercise ex)
+    {
+        ErrorMessage = "";
+        EditingId = ex.Id;
+        EditName = ex.Name;
+        EditMuscleGroup = ex.MuscleGroup;
+    }
+
+    private void CancelEdit()
+    {
+        EditingId = null;
+        EditName = "";
+        EditMuscleGroup = "";
+    }
+
+    private async Task SaveEdit()
+    {
+        ErrorMessage = "";
+
+        if (EditingId is null) return;
+
+        var id = EditingId.Value;
+        var name = EditName.Trim();
+        var group = EditMuscleGroup.Trim();
+
+        // évite les doublons de nom (sauf sur lui-même)
+        var exists = await Db.Exercises.AnyAsync(e => e.Name == name && e.Id != id);
+        if (exists)
+        {
+            ErrorMessage = "Un autre exercice a déjà ce nom.";
+            return;
+        }
+
+        var ex = await Db.Exercises.FindAsync(id);
+        if (ex is null)
+        {
+            ErrorMessage = "Exercice introuvable (peut-être supprimé).";
+            await Reload();
+            CancelEdit();
+            return;
+        }
+
+        ex.Name = name;
+        ex.MuscleGroup = group;
+
+        await Db.SaveChangesAsync();
+
+        await Reload();
+        CancelEdit();
+    }
+}

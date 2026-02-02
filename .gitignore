@@ -416,3 +416,24 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Build
+bin/
+obj/
+
+# User / IDE
+.vs/
+*.user
+*.suo
+
+# SQLite local DB
+*.db
+*.db-shm
+*.db-wal
+
+# Library files (LibMan / Bootstrap etc.)
+wwwroot/lib/
+
+# Logs
+*.log
+
